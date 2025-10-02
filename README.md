@@ -1,4 +1,4 @@
-# Task Management App - Laravel + Vue.js
+# Prueba tenica - Laravel + Vue.js
 
 ## Instalación
 
@@ -12,4 +12,5 @@ php artisan key:generate
 php artisan migrate
 php artisan serve
 ```
+
 # Prueba-Tecnica-Sebastian-guzman
