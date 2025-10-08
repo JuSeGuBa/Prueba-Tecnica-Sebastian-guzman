@@ -327,7 +327,7 @@
               v-for="task in tasks"
               :key="task.id"
               :class="[
-                'rounded-xl p-6 border-2 transition-all duration-300 transform hover:scale-[1.02]',
+                'relative rounded-xl p-6 border-2 transition-all duration-300 transform hover:scale-[1.02]',
                 task.is_done
                   ? 'bg-green-50 border-green-200 shadow-sm'
                   : 'bg-white border-gray-200 shadow-lg hover:shadow-xl',
@@ -394,7 +394,6 @@
                         </span>
                       </div>
 
-                      <!-- Keywords -->
                       <div class="mt-4 flex flex-wrap gap-2">
                         <span
                           v-if="task.keywords && task.keywords.length"
@@ -412,17 +411,48 @@
                   </div>
                 </div>
 
-                <button
-                  @click="toggle(task.id)"
-                  :class="[
-                    'ml-4 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 transform hover:scale-105',
-                    task.is_done
-                      ? 'bg-orange-500 text-white hover:bg-orange-600 shadow-md'
-                      : 'bg-green-500 text-white hover:bg-green-600 shadow-md',
-                  ]"
-                >
-                  {{ task.is_done ? "Marcar Pendiente" : "Marcar Completada" }}
-                </button>
+                <!-- Botón de opciones -->
+                <div class="relative ml-4">
+                  <button
+                    @click="toggleMenu(task.id)"
+                    class="p-2 rounded-full hover:bg-gray-200 transition-all"
+                  >
+                    <svg
+                      class="w-6 h-6 text-gray-600"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M6 12h.01M12 12h.01M18 12h.01"
+                      />
+                    </svg>
+                  </button>
+
+                  <!-- Menú desplegable -->
+                  <transition name="fade-slide">
+                    <div
+                      v-if="openMenuId === task.id"
+                      class="absolute right-0 mt-2 w-36 bg-white rounded-lg shadow-lg border border-gray-200 z-10 transform transition-all duration-200"
+                    >
+                      <button
+                        @click="startEdit(task)"
+                        class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600"
+                      >
+                        ✏️ Editar
+                      </button>
+                      <button
+                        @click="deleteTask(task.id)"
+                        class="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        🗑️ Eliminar
+                      </button>
+                    </div>
+                  </transition>
+                </div>
               </div>
             </div>
           </div>
@@ -435,38 +465,132 @@
         + Vue.js
       </div>
     </div>
+    <!-- Modal de edición -->
+    <transition name="fade-zoom">
+      <div
+        v-if="editMode"
+        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      >
+        <div
+          class="bg-white p-6 rounded-xl shadow-xl w-[420px] transform transition-all duration-300"
+        >
+          <h3 class="text-lg font-semibold text-gray-800 mb-4">Editar Tarea</h3>
+
+          <!-- Editar título -->
+          <label class="block text-sm font-medium text-gray-600 mb-1"
+            >Título</label
+          >
+          <input
+            v-model="editTitle"
+            type="text"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-4"
+            placeholder="Nuevo título"
+          />
+
+          <!-- Editar tecnologías -->
+          <label class="block text-sm font-medium text-gray-600 mb-2">
+            Tecnologías / Palabras clave
+          </label>
+
+          <div class="flex items-center mb-3">
+            <input
+              v-model="newKeyword"
+              type="text"
+              class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400"
+              placeholder="Agregar tecnología..."
+              @keyup.enter="addEditKeyword"
+            />
+            <button
+              @click="addEditKeyword"
+              class="ml-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            >
+              +
+            </button>
+          </div>
+
+          <!-- Lista de tecnologías -->
+          <div class="flex flex-wrap gap-2 mb-4">
+            <span
+              v-for="kw in editKeywords"
+              :key="kw.id"
+              class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
+            >
+              {{ kw.name }}
+              <button
+                @click="removeEditKeyword(kw.id)"
+                class="ml-2 text-blue-500 hover:text-red-600 transition"
+              >
+                ✖
+              </button>
+            </span>
+            <span
+              v-if="!editKeywords.length"
+              class="text-sm text-gray-400 italic"
+            >
+              Sin tecnologías aún
+            </span>
+          </div>
+
+          <!-- Botones de acción -->
+          <div class="mt-4 flex justify-end space-x-3">
+            <button
+              @click="editMode = false"
+              class="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300"
+            >
+              Cancelar
+            </button>
+            <button
+              @click="confirmEdit"
+              class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Guardar
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue";
-import axios from "axios";
+import { ref, onMounted, computed, watch } from "vue";
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE || "http://localhost:8000/api/v1";
+// --- Datos simulados ---
+const keywords = ref([
+  { id: 1, name: "Vue.js" },
+  { id: 2, name: "Laravel" },
+  { id: 3, name: "MySQL" },
+  { id: 4, name: "JavaScript" },
+  { id: 5, name: "Tailwind" },
+  { id: 6, name: "API REST" },
+  { id: 7, name: "Node.js" },
+  { id: 8, name: "React" },
+  { id: 9, name: "Python" },
+  { id: 10, name: "MongoDB" },
+]);
 
-const tasks = ref([]);
-const keywords = ref([]);
+const tasks = ref(JSON.parse(localStorage.getItem("tasks") || "[]"));
 const newTitle = ref("");
 const selectedKeywords = ref([]);
 const tempKeyword = ref("");
 const loading = ref(false);
 const error = ref("");
 
+// --- Computadas ---
 const totalTasks = computed(() => tasks.value.length);
 const completedTasks = computed(
-  () => tasks.value.filter((task) => task.is_done).length
+  () => tasks.value.filter((t) => t.is_done).length
 );
 const pendingTasks = computed(
-  () => tasks.value.filter((task) => !task.is_done).length
+  () => tasks.value.filter((t) => !t.is_done).length
 );
 
-const availableKeywords = computed(() => {
-  return keywords.value.filter((k) => !selectedKeywords.value.includes(k.id));
-});
+const availableKeywords = computed(() =>
+  keywords.value.filter((k) => !selectedKeywords.value.includes(k.id))
+);
 
 const popularKeywords = computed(() => {
-  const popularNames = [
+  const names = [
     "Vue.js",
     "Laravel",
     "MySQL",
@@ -474,11 +598,11 @@ const popularKeywords = computed(() => {
     "Tailwind",
     "API REST",
   ];
-  return keywords.value.filter((k) => popularNames.includes(k.name));
+  return keywords.value.filter((k) => names.includes(k.name));
 });
 
 const frontendKeywords = computed(() => {
-  const frontendNames = [
+  const names = [
     "Vue.js",
     "JavaScript",
     "TypeScript",
@@ -489,11 +613,11 @@ const frontendKeywords = computed(() => {
     "React",
     "SASS",
   ];
-  return keywords.value.filter((k) => frontendNames.includes(k.name));
+  return keywords.value.filter((k) => names.includes(k.name));
 });
 
 const backendKeywords = computed(() => {
-  const backendNames = [
+  const names = [
     "Laravel",
     "PHP",
     "API REST",
@@ -504,11 +628,11 @@ const backendKeywords = computed(() => {
     "Java",
     "Spring Boot",
   ];
-  return keywords.value.filter((k) => backendNames.includes(k.name));
+  return keywords.value.filter((k) => names.includes(k.name));
 });
 
 const databaseKeywords = computed(() => {
-  const databaseNames = [
+  const names = [
     "MySQL",
     "PostgreSQL",
     "MongoDB",
@@ -516,30 +640,19 @@ const databaseKeywords = computed(() => {
     "Redis",
     "Firebase",
   ];
-  return keywords.value.filter((k) => databaseNames.includes(k.name));
+  return keywords.value.filter((k) => names.includes(k.name));
 });
 
-const fetchTasks = async () => {
-  try {
-    const res = await axios.get(`${API_BASE}/tasks`);
-    tasks.value = res.data;
-  } catch (e) {
-    console.error("Error fetching tasks:", e);
-    error.value = "Error al cargar las tareas";
-  }
+// --- Funciones principales ---
+const saveTasks = () =>
+  localStorage.setItem("tasks", JSON.stringify(tasks.value));
+
+const fetchTasks = () => {
+  // ya no usa backend, solo recarga desde localStorage
+  tasks.value = JSON.parse(localStorage.getItem("tasks") || "[]");
 };
 
-const fetchKeywords = async () => {
-  try {
-    const res = await axios.get(`${API_BASE}/keywords`);
-    keywords.value = res.data;
-  } catch (e) {
-    console.error("Error fetching keywords:", e);
-    error.value = "Error al cargar las palabras clave";
-  }
-};
-
-const createTask = async () => {
+const createTask = () => {
   error.value = "";
   if (!newTitle.value.trim()) {
     error.value = "El título es obligatorio";
@@ -547,46 +660,44 @@ const createTask = async () => {
   }
 
   loading.value = true;
-  try {
-    const payload = {
+  setTimeout(() => {
+    const newTask = {
+      id: Date.now(),
       title: newTitle.value.trim(),
-      keyword_ids: selectedKeywords.value,
+      is_done: false,
+      created_at: new Date().toISOString(),
+      keywords: keywords.value.filter((k) =>
+        selectedKeywords.value.includes(k.id)
+      ),
     };
-    const res = await axios.post(`${API_BASE}/tasks`, payload);
-    tasks.value.unshift(res.data);
+
+    tasks.value.unshift(newTask);
+    saveTasks();
+
     newTitle.value = "";
     selectedKeywords.value = [];
-    error.value = "";
-  } catch (e) {
-    console.error("Error creating task:", e);
-    error.value = e.response?.data?.message || "Error creando tarea";
-  } finally {
     loading.value = false;
+  }, 400);
+};
+
+const toggle = (id) => {
+  const task = tasks.value.find((t) => t.id === id);
+  if (task) {
+    task.is_done = !task.is_done;
+    saveTasks();
   }
 };
 
-const toggle = async (id) => {
-  try {
-    const res = await axios.patch(`${API_BASE}/tasks/${id}/toggle`);
-    const idx = tasks.value.findIndex((t) => t.id === res.data.id);
-    if (idx !== -1) tasks.value[idx] = res.data;
-  } catch (e) {
-    console.error("Error toggling task:", e);
-    error.value = "Error al cambiar el estado de la tarea";
-  }
-};
-
-const formatDate = (dateString) => {
-  return new Date(dateString).toLocaleDateString("es-ES", {
+const formatDate = (dateString) =>
+  new Date(dateString).toLocaleDateString("es-ES", {
     day: "numeric",
     month: "short",
     year: "numeric",
   });
-};
 
 const getKeywordName = (keywordId) => {
-  const keyword = keywords.value.find((k) => k.id === keywordId);
-  return keyword ? keyword.name : "";
+  const k = keywords.value.find((k) => k.id === keywordId);
+  return k ? k.name : "";
 };
 
 const addKeyword = () => {
@@ -613,10 +724,69 @@ const toggleKeyword = (keywordId) => {
   }
 };
 
-onMounted(() => {
-  fetchKeywords();
-  fetchTasks();
-});
+// --- Montaje ---
+onMounted(fetchTasks);
+
+// --- Guarda automáticamente en localStorage cuando cambian las tareas ---
+watch(tasks, saveTasks, { deep: true });
+const openMenuId = ref(null);
+const editMode = ref(false);
+const editTaskId = ref(null);
+const editTitle = ref("");
+
+// --- Control del menú ---
+const toggleMenu = (id) => {
+  openMenuId.value = openMenuId.value === id ? null : id;
+};
+
+// --- Eliminar tarea ---
+const deleteTask = (id) => {
+  tasks.value = tasks.value.filter((t) => t.id !== id);
+  saveTasks();
+  openMenuId.value = null;
+};
+
+const editKeywords = ref([]); // Palabras clave del modal
+const newKeyword = ref(""); // Nueva palabra clave
+
+// Al abrir el modal, cargamos las palabras actuales
+const startEdit = (task) => {
+  editMode.value = true;
+  editTaskId.value = task.id;
+  editTitle.value = task.title;
+  editKeywords.value = [...(task.keywords || [])]; // Copia las keywords existentes
+  newKeyword.value = "";
+  openMenuId.value = null;
+};
+
+// Agregar nueva palabra clave
+// Agregar nueva palabra clave en el modal
+const addEditKeyword = () => {
+  const name = newKeyword.value.trim();
+  if (name && !editKeywords.value.some((k) => k.name === name)) {
+    editKeywords.value.push({ id: Date.now(), name });
+    newKeyword.value = "";
+  }
+};
+
+// Eliminar palabra clave en el modal
+const removeEditKeyword = (id) => {
+  editKeywords.value = editKeywords.value.filter((k) => k.id !== id);
+};
+
+// Confirmar edición completa
+const confirmEdit = () => {
+  const task = tasks.value.find((t) => t.id === editTaskId.value);
+  if (task && editTitle.value.trim()) {
+    task.title = editTitle.value.trim();
+    task.keywords = [...editKeywords.value];
+    saveTasks();
+  }
+  editMode.value = false;
+  editTaskId.value = null;
+  editTitle.value = "";
+  editKeywords.value = [];
+};
 </script>
 
 <style scoped>
